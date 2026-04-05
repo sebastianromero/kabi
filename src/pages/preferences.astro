@@ -1,18 +1,15 @@
 ---
-import "@/styles/global.css";
-import { SidebarShell } from "@/components/sidebar-shell";
-
-const { entries = [], searchIndexJson } = Astro.props;
+import "@/styles/global.css"
+import { PreferencesWindow } from "@/components/preferences-window"
 ---
 
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" href="/favicon.ico" />
-    <meta name="generator" content={Astro.generator} />
-    <title>KB</title>
+    <title>Preferences</title>
     <script is:inline>
       (function () {
         var stored = localStorage.getItem("theme");
@@ -23,11 +20,7 @@ const { entries = [], searchIndexJson } = Astro.props;
       })();
     </script>
   </head>
-  <body class="overflow-hidden">
-    <div class="h-svh bg-background text-foreground">
-      <main class="h-svh w-full overflow-hidden">
-        <SidebarShell client:load entries={entries} searchIndexJson={searchIndexJson} />
-      </main>
-    </div>
+  <body class="m-0 h-full overflow-hidden">
+    <PreferencesWindow client:load />
   </body>
 </html>

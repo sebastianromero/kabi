@@ -1,5 +1,7 @@
 # build output
 dist/
+out/
+releases/
 
 # generated types
 .astro/
@@ -22,3 +24,9 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+.vite/
+.vscode/
+
+# temporary local vault content used during desktop testing
+kb/

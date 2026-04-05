@@ -1,0 +1,129 @@
+---
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const notes = await getCollection('kb');
+  
+  return notes.map((note) => ({
+    params: { id: note.id },
+    props: { note },
+  }));
+}
+
+const { note } = Astro.props;
+const { Content } = await render(note);
+const sourceFilePath = note.data._sourceFilePath || '';
+const vaultRootPath = note.data._vaultRootPath || '';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{note.data.title || note.id}</title>
+  </head>
+  <body style="max-width: 800px; margin: 0 auto; padding: 2rem; font-family: system-ui, sans-serif; line-height: 1.6;">
+    
+    <nav style="margin-bottom: 2rem;">
+      <a href="/" style="color: #0056b3; text-decoration: none;">← Back to Kabi</a>
+    </nav>
+    
+    <header style="margin-bottom: 3rem;">
+      <h1 style="margin-bottom: 0.5rem;">{note.data.title || note.id}</h1>
+      
+      {note.data.pubDate && (
+        <time style="color: #666; font-size: 0.9rem;">
+          {new Date(note.data.pubDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </time>
+      )}
+    </header>
+
+    <main class="markdown-body">
+      <Content />
+    </main>
+
+    <script is:inline define:vars={{ sourceFilePath, vaultRootPath }}>
+      const buildFileUrl = (absolutePath) => {
+        const normalized = String(absolutePath || "").replace(/\\/g, "/");
+        if (!normalized) return "";
+
+        const withLeadingSlash = /^[A-Za-z]:\//.test(normalized) ? `/${normalized}` : normalized;
+        return encodeURI(`file://${withLeadingSlash}`)
+          .replace(/#/g, "%23")
+          .replace(/\?/g, "%3F");
+      };
+
+      const buildElectronAssetUrl = (absolutePath) => {
+        const normalized = String(absolutePath || "").replace(/\\/g, "/");
+        return `kb-file://local/${encodeURIComponent(normalized)}`;
+      };
+
+      const buildLocalResourceUrl = (absolutePath) => {
+        if (window.kb) {
+          return buildElectronAssetUrl(absolutePath);
+        }
+
+        return buildFileUrl(absolutePath);
+      };
+
+      const buildDirectoryUrl = (absolutePath) => {
+        const normalized = String(absolutePath || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        return `${buildLocalResourceUrl(normalized)}/`;
+      };
+
+      const getRelativeSourceDir = () => {
+        const normalizedSource = String(sourceFilePath || "").replace(/\\/g, "/");
+        const normalizedRoot = String(vaultRootPath || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        if (!normalizedSource || !normalizedRoot) return "";
+
+        const sourceDir = normalizedSource.replace(/\/[^/]*$/, "");
+        if (!sourceDir.startsWith(`${normalizedRoot}/`)) return "";
+
+        return sourceDir.slice(normalizedRoot.length + 1);
+      };
+
+      const resolveLocalAbsolutePath = (rawPath) => {
+        const pathOnly = decodeURIComponent((rawPath.split(/[?#]/)[0] || rawPath)).trim();
+        if (!pathOnly) return "";
+        if (pathOnly.startsWith("/")) return pathOnly;
+        if (/^[A-Za-z]:[\\/]/.test(pathOnly)) return pathOnly;
+
+        const normalizedPath = pathOnly.replace(/\\/g, "/").replace(/^\/+/, "");
+        const relativeSourceDir = getRelativeSourceDir();
+        if (
+          vaultRootPath &&
+          normalizedPath &&
+          !normalizedPath.startsWith("./") &&
+          !normalizedPath.startsWith("../") &&
+          (normalizedPath.includes("/") || relativeSourceDir) &&
+          (!relativeSourceDir || normalizedPath === relativeSourceDir || normalizedPath.startsWith(`${relativeSourceDir}/`))
+        ) {
+          return decodeURIComponent(new URL(normalizedPath, buildDirectoryUrl(vaultRootPath)).pathname);
+        }
+
+        return decodeURIComponent(new URL(pathOnly, buildFileUrl(sourceFilePath)).pathname);
+      };
+
+      for (const node of document.querySelectorAll("main.markdown-body a, main.markdown-body img")) {
+        const attributeName = node.tagName === "IMG" ? "src" : "href";
+        const rawValue = (node.getAttribute(attributeName) || "").trim();
+        if (!rawValue || rawValue.startsWith("#") || /^(mailto:|tel:|data:|https?:\/\/|file:\/\/)/i.test(rawValue)) continue;
+
+        const resolvedPath = resolveLocalAbsolutePath(rawValue);
+        if (/\.mdx?(?:$|[?#])/i.test(resolvedPath)) {
+          if (node.tagName === "A") {
+            node.setAttribute("href", `/?doc=${encodeURIComponent(resolvedPath)}`);
+          }
+          continue;
+        }
+
+        const suffix = rawValue.match(/[?#].*$/)?.[0] ?? "";
+        node.setAttribute(attributeName, `${buildLocalResourceUrl(resolvedPath)}${suffix}`);
+      }
+    </script>
+
+  </body>
+</html>

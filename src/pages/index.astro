@@ -1,11 +1,101 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
+import Layout from "@/layouts/Layout.astro";
+import { buildSearchDocuments, searchIndexOptions } from "@/lib/search";
+import { getCollection } from "astro:content";
+import MiniSearch from "minisearch";
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+const allNotes = await getCollection("kb");
+
+const normalizePreview = (raw: string): string => {
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= 180) return collapsed;
+  return `${collapsed.slice(0, 180)}...`;
+};
+
+const normalizeAuthor = (author: unknown): string => {
+  if (typeof author === "string" && author.trim()) return author;
+
+  if (Array.isArray(author)) {
+    const values = author.filter((value): value is string => typeof value === "string");
+    if (values.length) return values.join(", ");
+  }
+
+  if (author && typeof author === "object" && "name" in author) {
+    const name = (author as { name?: unknown }).name;
+    if (typeof name === "string" && name.trim()) return name;
+  }
+
+  return "Unknown author";
+};
+
+const normalizePropertyValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "-";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") return value || "-";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizePropertyValue(item)).join(", ") || "-";
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 280 ? `${serialized.slice(0, 280)}...` : serialized;
+  } catch {
+    return "[unserializable]";
+  }
+};
+
+const buildProperties = (
+  id: string,
+  folder: string,
+  body: string,
+  data: Record<string, unknown>
+): Array<{ key: string; value: string }> => {
+  const properties: Array<{ key: string; value: string }> = [
+    { key: "id", value: id },
+    { key: "folder", value: folder },
+    { key: "word_count", value: String((body.match(/\S+/g) ?? []).length) },
+    { key: "char_count", value: String(body.length) },
+  ];
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key.startsWith("_")) continue;
+    properties.push({ key, value: normalizePropertyValue(value) });
+  }
+
+  return properties;
+};
+
+const entries = allNotes.map((note) => {
+  const folder = note.id.includes("/") ? note.id.split("/")[0] : "root";
+  const author = (note.data as Record<string, unknown>).author;
+  const primaryDate = note.data.updatedDate ?? note.data.pubDate;
+  const content = note.body || "No content.";
+  const properties = buildProperties(
+    note.id,
+    folder,
+    content,
+    note.data as Record<string, unknown>
+  );
+
+  return {
+    id: note.id,
+    folder,
+    title: note.data.title || note.id,
+    author: normalizeAuthor(author),
+    date: primaryDate ? primaryDate.toISOString() : "",
+    sourceFilePath: note.data._sourceFilePath || "",
+    vaultRootPath: note.data._vaultRootPath || "",
+    preview: normalizePreview(content),
+    content,
+    properties,
+  };
+});
+
+const searchDocuments = buildSearchDocuments(entries);
+const searchIndex = new MiniSearch(searchIndexOptions);
+searchIndex.addAll(searchDocuments);
+const searchIndexJson = searchIndex.toJSON();
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<Layout entries={entries} searchIndexJson={searchIndexJson} />
